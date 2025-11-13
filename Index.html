@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>เยี่ยมบ้านนักเรียน</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+  <?!= include('Stylesheet'); ?>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <a href="<?= url ?>?page=teacher" class="teacher-login-link" target="_top">สำหรับคุณครู</a>
+      <h1>ระบบบันทึกข้อมูลเยี่ยมบ้านนักเรียน</h1>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-link active" onclick="openTab(event, 'FormTab')">1. กรอกข้อมูล</button>
+      <button class="tab-link" onclick="openTab(event, 'DataTab')">2. ดูข้อมูลที่บันทึก</button>
+    </div>
+
+    <div id="FormTab" class="tab-content" style="display: block;">
+      <form id="studentForm">
+        <h2>1. ข้อมูลพื้นฐานของนักเรียน</h2>
+        <div class="form-grid">
+          <div class="form-group"><label for="title_student">คำนำหน้าชื่อ:</label><select name="title_student" id="title_student" required><option value="">-- เลือก --</option><option value="ด.ช.">เด็กชาย</option><option value="ด.ญ.">เด็กหญิง</option><option value="นาย">นาย</option><option value="น.ส.">นางสาว</option></select></div>
+          <div class="form-group"><label for="fullname">ชื่อ-นามสกุล:</label><input type="text" id="fullname" required></div>
+          <div class="form-group"><label for="classroom">ห้องเรียน:</label><select name="classroom" id="classroom" required><option value="">-- เลือก --</option><? for (let i = 1; i <= 3; i++) { ?><option value="1/<?= i ?>">ม.1/<?= i ?></option><? } ?></select></div>
+          <div class="form-group"><label for="number">เลขที่:</label><input type="number" id="number" min="1" max="50"></div>
+          <div class="form-group"><label for="studentId">รหัสประจำตัว:</label><input type="number" id="studentId" min="1" required></div>
+          <div class="form-group"><label for="phone">เบอร์โทรศัพท์:</label><input type="text" id="phone"></div>
+        </div>
+        <h2>2. ข้อมูลที่อยู่และการเดินทาง</h2>
+        <h4>2.1 ที่อยู่ปัจจุบัน (หากไม่มีให้ใส่ - )</h4>
+        <div class="form-grid-address"><input type="text" placeholder="บ้านเลขที่" id="houseNumber" required><input type="text" placeholder="หมู่บ้าน/อาคาร" id="village"><input type="text" placeholder="หมู่ที่" id="moo"><input type="text" placeholder="ซอย" id="alley"><input type="text" placeholder="ตำบล/แขวง" id="subdistrict" required><input type="text" placeholder="อำเภอ/เขต" id="district" required><input type="text" placeholder="จังหวัด" id="province" required><input type="text" placeholder="รหัสไปรษณีย์" id="postalCode" required></div>
+        <h4>2.2 ปักหมุดตำแหน่งบ้าน</h4>
+        <div id="map"></div>
+        <div class="form-grid"><div class="form-group"><label>ละติจูด:</label><input type="text" id="lat" readonly></div><div class="form-group"><label>ลองจิจูด:</label><input type="text" id="lng" readonly></div></div>
+        <h4>2.3 จุดสังเกตใกล้บ้าน</h4>
+        <input type="text" placeholder="เช่น อยู่ตรงข้าม 7-Eleven, ใกล้วัด..." id="landmark">
+        <h3>ข้อมูลรูปภาพ</h3>
+        <h4>รูปถ่ายโปรไฟล์นักเรียน</h4>
+        <input type="file" id="student_photo" name="student_photo" accept="image/png, image/jpeg, image/webp" required>
+        <h4>รูปถ่ายหน้าบ้าน</h4>
+        <input type="file" id="house_photo" name="house_photo" accept="image/png, image/jpeg, image/webp" required>
+        <h2>3. ข้อมูลผู้ปกครอง</h2>
+        <div class="form-grid">
+          <div class="form-group"><label for="title_parent">คำนำหน้าชื่อ:</label><select name="title_parent" id="title_parent"><option value="">-- เลือก --</option><option value="นาย">นาย</option><option value="นาง">นาง</option><option value="น.ส.">นางสาว</option></select></div>
+          <div class="form-group"><label for="fullname_parent">ชื่อ-นามสกุล ผู้ปกครอง:</label><input type="text" id="fullname_parent" required></div>
+          <div class="form-group"><label for="relevance">ความเกี่ยวข้อง:</label><input type="text" placeholder="บิดา, มารดา, ปู่, ย่า, อื่นๆ" id="relevance" required></div>
+          <div class="form-group"><label for="phone_parent">เบอร์โทรศัพท์ผู้ปกครอง:</label><input type="text" id="phone_parent"></div>
+        </div>
+      </form>
+      <div class="form-actions"><button id="submitBtn" onclick="submitForm()">บันทึกข้อมูล</button></div>
+    </div>
+
+    <div id="DataTab" class="tab-content">
+      <h2>ข้อมูลที่คุณบันทึก</h2>
+      <div class="table-container" id="studentDataContainer">
+        <p>เมื่อคุณบันทึกข้อมูลเรียบร้อยแล้ว ข้อมูลจะปรากฏที่นี่</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading" class="modal-overlay" style="display: none;"><div class="modal-content"><div class="loader"></div><p>กำลังบันทึกข้อมูล...</p></div></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+  <script>
+    function openTab(evt, tabName) { document.querySelectorAll('.tab-content').forEach(tc => tc.style.display = "none"); document.querySelectorAll('.tab-link').forEach(tl => tl.classList.remove('active')); document.getElementById(tabName).style.display = "block"; evt.currentTarget.classList.add('active'); }
+    const map = L.map('map').setView([18.7396252,99.1213674], 17);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+ 
+    let marker = L.marker(map.getCenter()).addTo(map); // ลบ { draggable: true }
+    function updateLatLng(latlng) { marker.setLatLng(latlng); document.getElementById("lat").value = latlng.lat.toFixed(6); document.getElementById("lng").value = latlng.lng.toFixed(6); }
+    map.on('click', e => updateLatLng(e.latlng)); // คงการคลิกไว้
+
+    L.Control.geocoder({ defaultMarkGeocode: false }).on('markgeocode', e => { const latlng = e.geocode.center; map.setView(latlng, 16); updateLatLng(latlng); }).addTo(map);
+    updateLatLng(map.getCenter());
+
+    function submitForm() {
+      if (!document.getElementById("studentForm").checkValidity()) { 
+        alert("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน"); 
+        document.getElementById("studentForm").reportValidity(); 
+        return; 
+      }
+      document.getElementById('loading').style.display = 'flex';
+      const studentPhotoFile = document.getElementById('student_photo').files[0];
+      const housePhotoFile = document.getElementById('house_photo').files[0];
+
+      const uploadStudentPhoto = new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          google.script.run
+            .withSuccessHandler(url => {
+              if (String(url).startsWith('Error:')) { reject('Upload Student Photo Error: ' + url); } 
+              else { resolve(url); }
+            })
+            .withFailureHandler(err => { reject('Upload Student Photo Error: ' + err.message); })
+            .uploadProfilePhoto({ 
+              base64: e.target.result.split(',')[1], 
+              mimeType: studentPhotoFile.type, 
+              fileName: new Date().getTime() + "_profile_" + studentPhotoFile.name 
+            });
+        };
+        reader.readAsDataURL(studentPhotoFile);
+      });
+
+      const uploadHousePhoto = (studentPhotoUrl) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          google.script.run
+            .withSuccessHandler(url => {
+              if (String(url).startsWith('Error:')) { reject('Upload House Photo Error: ' + url); }
+              else { resolve({ studentPhotoUrl: studentPhotoUrl, housePhotoUrl: url }); }
+            })
+            .withFailureHandler(err => { reject('Upload House Photo Error: ' + err.message); })
+            .uploadFileToGoogleDrive({
+              base64: e.target.result.split(',')[1],
+              mimeType: housePhotoFile.type,
+              fileName: new Date().getTime() + "_house_" + housePhotoFile.name
+            });
+        };
+        reader.readAsDataURL(housePhotoFile);
+      });
+
+      uploadStudentPhoto
+        .then(uploadHousePhoto)
+        .then(urls => {
+          sendDataToServer(urls.studentPhotoUrl, urls.housePhotoUrl);
+        })
+        .catch(err => {
+          alert('Upload Error: ' + err);
+          document.getElementById('loading').style.display = 'none';
+        });
+    }
+
+    function sendDataToServer(studentPhotoUrl, housePhotoUrl) {
+      const data = {
+        title_student: document.getElementById("title_student").value, fullname: document.getElementById("fullname").value, number: document.getElementById("number").value, classroom: document.getElementById("classroom").value,
+        studentId: document.getElementById("studentId").value, phone: document.getElementById("phone").value, houseNumber: document.getElementById("houseNumber").value,
+        village: document.getElementById("village").value, moo: document.getElementById("moo").value, alley: document.getElementById("alley").value,
+        subdistrict: document.getElementById("subdistrict").value, district: document.getElementById("district").value, province: document.getElementById("province").value,
+        postalCode: document.getElementById("postalCode").value, lat: document.getElementById("lat").value, lng: document.getElementById("lng").value,
+        landmark: document.getElementById("landmark").value, house_photo_url: housePhotoUrl, student_photo_url: studentPhotoUrl,
+        title_parent: document.getElementById("title_parent").value,
+        fullname_parent: document.getElementById("fullname_parent").value, relevance: document.getElementById("relevance").value, phone_parent: document.getElementById("phone_parent").value,
+      };
+      google.script.run
+        .withSuccessHandler(response => {
+          document.getElementById('loading').style.display = 'none';
+          alert("เพิ่มข้อมูลเรียบร้อย");
+          document.getElementById("studentForm").reset();
+          updateLatLng(map.getCenter());
+          
+          displaySingleStudentRecord(response.headers, response.record);
+          
+          openTab({ currentTarget: document.querySelector('.tab-link:nth-child(2)') }, 'DataTab');
+        })
+        .withFailureHandler(err => { document.getElementById('loading').style.display = 'none'; alert('Save Error: ' + err.message); })
+        .addStudentRecord(data);
+    }
+    
+    function displaySingleStudentRecord(headers, record) {
+        const container = document.getElementById('studentDataContainer');
+        const displayHeaders = ['URL รูปถ่ายนักเรียน', 'ชื่อ-นามสกุล', 'เลขประจำตัวนักเรียน', 'เลขที่', 'เบอร์โทรศัพท์', 'เบอร์โทรศัพท์ผู้ปกครอง', 'ที่อยู่เต็ม(คำนวณ)', 'สถานะการตรวจสอบ'];
+        const displayIndices = displayHeaders.map(h => headers.indexOf(h));
+        const titleIndex = headers.indexOf('คำนำหน้า');
+
+        let table = '<table><thead><tr>';
+        displayHeaders.forEach(h => table += `<th>${h}</th>`);
+        table += '</tr></thead><tbody><tr>';
+        
+        displayIndices.forEach(index => {
+            if (index < 0) { 
+                table += `<td>N/A</td>`; 
+                return; 
+            }
+            let cellData = record[index];
+            if (headers[index] === 'ชื่อ-นามสกุล') {
+                cellData = `${record[titleIndex] || ''} ${cellData}`;
+            } else if (headers[index] === 'URL รูปถ่ายนักเรียน') {
+                cellData = cellData ? `<img src="${cellData}" class="profile-photo-mini">` : 'N/A';
+            }
+            table += `<td>${cellData}</td>`;
+        });
+        
+        table += '</tr></tbody></table>';
+        container.innerHTML = table;
+    }
+  </script>
+</body>
+</html>
