@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?!= include('Stylesheet'); ?>
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f4f7f6; }
+        .login-container { text-align: center; padding: 40px; background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 8px; width: 320px; }
+        input[type="text"], input[type="password"] { margin: 10px 0; padding: 12px; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        #error-msg { color: red; margin-top: 10px; height: 1em; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>สำหรับคุณครู</h1>
+        <p>กรุณาลงชื่อเข้าสู่ระบบ</p>
+        <input type="text" id="username" placeholder="ชื่อผู้ใช้">
+        <input type="password" id="password" placeholder="รหัสผ่าน">
+        <button class="btn" id="loginBtn" onclick="attemptLogin()">ลงชื่อเข้าใช้</button>
+        <p id="error-msg"></p>
+    </div>
+<script>
+    function attemptLogin() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        const btn = document.getElementById('loginBtn');
+        const msg = document.getElementById('error-msg');
+        
+        if (!u || !p) {
+            msg.textContent = "กรุณากรอกข้อมูลให้ครบ";
+            return;
+        }
+        
+        btn.disabled = true;
+        btn.textContent = "กำลังตรวจสอบ...";
+        msg.textContent = "";
+        
+        google.script.run
+            .withSuccessHandler(token => { // <-- รับค่ากลับมาเป็น token
+                if (token) {
+                    window.open('<?= ScriptApp.getService().getUrl() ?>?page=teacher&token=' + token, '_top');
+                } else {
+                    msg.textContent = "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง";
+                    btn.disabled = false;
+                    btn.textContent = "ลงชื่อเข้าใช้";
+                }
+            })
+            .withFailureHandler(err => {
+                msg.textContent = "ผิดพลาด: " + err.message;
+                btn.disabled = false;
+                btn.textContent = "ลงชื่อเข้าใช้";
+            })
+            .login(u, p);
+    }
+    
+    // ทำให้กด Enter ที่ช่องไหนก็ได้เพื่อล็อกอิน
+    document.getElementById('username').addEventListener('keyup', e => { if (e.key === "Enter") attemptLogin(); });
+    document.getElementById('password').addEventListener('keyup', e => { if (e.key === "Enter") attemptLogin(); });
+</script>
+</body>
+</html>
