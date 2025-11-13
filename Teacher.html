@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>แดชบอร์ดสำหรับครู</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <?!= include('Stylesheet'); ?>
+    <style>
+        .map-container { display: flex; flex-wrap: wrap; height: 600px; margin-top: 20px; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        #routeMap { flex: 1; min-width: 300px; height: 100%; border-radius: 8px 0 0 8px;}
+        .route-planner { width: 350px; height: 100%; overflow-y: auto; padding: 20px; background: #fbfdff; border-left: 1px solid #ecf0f1; }
+        .student-list-item { margin-bottom: 8px; padding: 5px; border-radius: 4px; transition: background-color 0.2s; }
+        .student-list-item:hover { background-color: #f0f5f9; }
+        #route-details { margin-top: 15px; padding: 15px; background-color: #f0f8ff; border-radius: 8px; border: 1px solid #e0effc; }
+        .user-info { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(5px); padding: 10px 20px; text-align: right; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .user-info button { background: var(--danger-color); padding: 8px 15px; font-size: 0.9em; border-radius: 20px; }
+        .teacher-settings { padding: 15px; background: #f8f9f9; border-radius: 8px; margin-bottom: 20px; }
+        .custom-map-marker {
+            background: transparent;
+            border: none;
+        }
+        .custom-map-marker img {
+            border-radius: 50%;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            object-fit: cover;
+        }
+        /* ซ่อน UI ที่ไม่ต้องการของ routing machine */
+        .leaflet-routing-container {
+            display: none !important;
+        }
+        /* CSS สำหรับหมุดตัวเลขบนแผนที่ */
+        .route-marker-icon {
+            background-color: #ffffff;
+            border: 2px solid #3498db;
+            border-radius: 50%;
+            color: #3498db;
+            font-weight: bold;
+            text-align: center;
+            line-height: 26px; /* ปรับให้ตัวเลขอยู่กลางแนวตั้ง */
+            font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="user-info">
+        <span>สวัสดี, <strong><?!= user.fullname ?></strong> (สิทธิ์: <?!= user.role ?>)</span>
+        <button onclick="logout()" class="btn-small">ออกจากระบบ</button>
+    </div>
+
+    <div class="container">
+        <div class="header"><h1>แดชบอร์ดข้อมูลนักเรียน</h1></div>
+
+        <div class="teacher-settings">
+            <strong>จุดเริ่มต้น:</strong> <span id="start-point-display">กำลังโหลด...</span>
+            <button class="btn-small btn-info" onclick="document.getElementById('startPointModal').style.display = 'flex'">เปลี่ยนจุดเริ่มต้น</button>
+            <button class="btn-small btn-success" onclick="useCurrentLocation()">ใช้ตำแหน่งปัจจุบัน</button>
+            <button class="btn-small" onclick="loadDashboardData()">รีเฟรชข้อมูล</button>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-link active" onclick="openTab(event, 'AllStudents')">เรียงตามระยะทาง</button>
+            <button class="tab-link" onclick="openTab(event, 'BySubdistrict')">แบ่งกลุ่มตามตำบล</button>
+            <button class="tab-link" onclick="openTab(event, 'MapTab')">แผนที่และเส้นทาง</button>
+        </div>
+
+        <div id="AllStudents" class="tab-content" style="display: block;">
+            <h2>นักเรียนทั้งหมด (เรียงจากใกล้ไปไกล)</h2>
+            <div class="table-container" id="allStudentsContainer"><p>กำลังโหลดข้อมูล...</p></div>
+        </div>
+
+        <div id="BySubdistrict" class="tab-content">
+            <h2>นักเรียนแบ่งตามตำบล</h2>
+            <div id="subdistrictContainer"><p>กำลังโหลดข้อมูล...</p></div>
+        </div>
+
+        <div id="MapTab" class="tab-content">
+            <h2>แผนที่และวางแผนเส้นทาง</h2>
+            <div class="map-container">
+                <div id="routeMap"></div>
+                <div class="route-planner">
+                    <h4>เลือกนักเรียนเพื่อวางแผนเส้นทาง</h4>
+                    <div id="student-checklist" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;"></div>
+                    <button class="btn" onclick="planCustomRoute()" style="width: 100%; margin-bottom: 15px;">คำนวณเส้นทางที่เลือก</button>
+                    <hr>
+                    <h4>แนะนำเส้นทางอัจฉริยะ</h4>
+                    <p style="font-size:0.9em;">ระบบจะจัดลำดับการเยี่ยมบ้านตามตำบลและระยะทางที่ใกล้ที่สุด</p>
+                    <button class="btn" onclick="planSmartRoute()" style="width: 100%;">แนะนำเส้นทางอัตโนมัติ</button>
+                    <div id="route-details">
+                        <p>ผลลัพธ์การคำนวณจะแสดงที่นี่</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="modal-overlay" style="display: none;"><div class="modal-content"><div class="loader"></div><p id="loading-text">กำลังโหลด...</p></div></div>
+    <div id="startPointModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="width: 500px;">
+            <span class="close-btn" onclick="document.getElementById('startPointModal').style.display='none'">×</span>
+            <h3>กำหนดจุดเริ่มต้น</h3>
+            <input type="text" id="startAddress" placeholder="กรอกที่อยู่ หรือ ละติจูด,ลองจิจูด">
+            <button onclick="setStartPointFromInput()">ตั้งค่า</button>
+        </div>
+    </div>
+    <div id="detailsModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="width: 90%; max-width: 650px; max-height: 85vh; overflow-y: auto;">
+            <span class="close-btn" onclick="document.getElementById('detailsModal').style.display='none'">×</span>
+            <div id="detailsModalBody"><p>กำลังโหลดข้อมูล...</p></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <script>
+        const sessionToken = "<?!= token ?>";
+        let allStudentsData = [];
+        let map;
+        let routeControl;
+        let routeMarkersLayer = null; // Layer สำหรับเก็บหมุดตัวเลข
+        let startPoint = { lat: 18.7396252, lng: 99.1213674 };
+        const teacherDefaultAddress = "<?= TEACHER_ADDRESS ?>";
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('start-point-display').textContent = teacherDefaultAddress;
+            updateAddressInSheet(teacherDefaultAddress);
+            loadDashboardData();
+        });
+
+        function showLoading(msg) { document.getElementById('loading-text').textContent = msg || 'กำลังโหลด...'; document.getElementById('loading').style.display = 'flex'; }
+        function hideLoading() { document.getElementById('loading').style.display = 'none'; }
+        
+        function openTab(evt, tabName) {
+            document.querySelectorAll('.tab-content').forEach(tc => tc.style.display = "none");
+            document.querySelectorAll('.tab-link').forEach(tl => tl.classList.remove('active'));
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.classList.add('active');
+            if (tabName === 'MapTab') {
+                initializeMap();
+                setTimeout(() => map?.invalidateSize(), 10);
+            }
+        }
+
+        function logout() {
+            showLoading('กำลังออกจากระบบ...');
+            google.script.run.withSuccessHandler(() => {
+                window.open('<?= ScriptApp.getService().getUrl() ?>', '_top');
+            }).logout(sessionToken);
+        }
+
+        function loadDashboardData() {
+            showLoading('กำลังโหลดข้อมูลนักเรียน...');
+            google.script.run
+                .withSuccessHandler(data => {
+                    hideLoading();
+                    if (data.error) { alert(data.error); return; }
+                    allStudentsData = data.allStudents.filter(s => s['Latitude (ที่ปักหมุด)'] || s['ค่าละติจูด (M)']);
+                    populateAllStudents(data.allStudents);
+                    populateSubdistricts(data.bySubdistrict);
+                    populateStudentChecklist();
+                })
+                .withFailureHandler(err => { hideLoading(); alert("เกิดข้อผิดพลาด: " + err.message); })
+                .getTeacherDashboardData(sessionToken);
+        }
+
+        function initializeMap() {
+            if (map) return;
+            map = L.map('routeMap').setView([startPoint.lat, startPoint.lng], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+
+            L.marker([startPoint.lat, startPoint.lng], {
+                icon: L.icon({
+                    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                    iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+                })
+            }).addTo(map).bindPopup('<b>จุดเริ่มต้น</b>').openPopup();
+
+            const subdistrictColors = {};
+            const colors = ['#3498db', '#9b59b6', '#2ecc71', '#f1c40f', '#e67e22', '#e74c3c', '#1abc9c', '#34495e'];
+            let colorIndex = 0;
+
+            allStudentsData.forEach(s => {
+                const lat = s['Latitude (ที่ปักหมุด)'] || s['ค่าละติจูด (M)'];
+                const lng = s['Longitude (ที่ปักหมุด)'] || s['ค่าลองจิจูด (M)'];
+                if (!lat || !lng) return;
+
+                const photoUrl = s['URL รูปถ่ายนักเรียน'];
+                const subdistrict = (s['ตำบล/แขวง'] || 'ไม่ระบุ').toString().trim();
+
+                if (!subdistrictColors[subdistrict]) {
+                    subdistrictColors[subdistrict] = colors[colorIndex % colors.length];
+                    colorIndex++;
+                }
+                const markerColor = subdistrictColors[subdistrict];
+                const popupContent = `<div style="font-size:14px; line-height:1.6;"><b>${s['คำนำหน้า'] || ''} ${s['ชื่อ-นามสกุล'] || 'N/A'}</b><br><b>ห้อง:</b> ${s.classroom ? s.classroom.replace('ข้อมูลนักเรียน','') : 'N/A'} <b>เลขที่:</b> ${s['เลขที่'] || 'N/A'}<br><b>ที่อยู่:</b> ${s['ที่อยู่เต็ม(คำนวณ)'] || '<i>ไม่มีข้อมูล</i>'}<br><br><button class="btn-small btn-info" style="width:100%;" onclick="showDetails('${s.ID}')">ดูรายละเอียดทั้งหมด</button></div>`;
+
+                if (photoUrl && !String(photoUrl).startsWith('Error')) {
+                    const studentIcon = L.divIcon({
+                        html: `<img src="${photoUrl}" style="width: 36px; height: 36px; border: 3px solid ${markerColor};">`,
+                        className: 'custom-map-marker',
+                        iconSize: [42, 42],
+                        iconAnchor: [21, 21]
+                    });
+                    L.marker([lat, lng], { icon: studentIcon }).addTo(map).bindPopup(popupContent);
+                } else {
+                    L.circleMarker([lat, lng], {
+                        color: markerColor,
+                        fillColor: markerColor,
+                        fillOpacity: 0.8,
+                        radius: 8
+                    }).addTo(map).bindPopup(popupContent);
+                }
+            });
+        }
+
+        function populateStudentChecklist() {
+            const container = document.getElementById('student-checklist');
+            container.innerHTML = '';
+            allStudentsData.forEach(s => {
+                const lat = s['Latitude (ที่ปักหมุด)'] || s['ค่าละติจูด (M)'];
+                const lng = s['Longitude (ที่ปักหมุด)'] || s['ค่าลองจิจูด (M)'];
+                if (!lat || !lng) return;
+                container.innerHTML += `<div class="student-list-item"><input type="checkbox" id="student_${s.ID}" value="${s.ID}" data-lat="${lat}" data-lng="${lng}"><label for="student_${s.ID}">${s['คำนำหน้า'] || ''} ${s['ชื่อ-นามสกุล']} (${s['ตำบล/แขวง']})</label></div>`;
+            });
+        }
+        
+        function calculateAndDisplayRoute(studentData, loadingMessage) {
+            showLoading(loadingMessage);
+            
+            const origin = `${startPoint.lat},${startPoint.lng}`;
+
+            google.script.run
+                .withSuccessHandler(result => {
+                    hideLoading();
+                    if (result.error) {
+                        alert("ผิดพลาด: " + result.error);
+                        return;
+                    }
+                    
+                    // 1. เคลียร์เส้นทางและหมุดเก่า
+                    if (routeControl) {
+                        map.removeControl(routeControl);
+                        routeControl = null;
+                    }
+                    if (routeMarkersLayer) {
+                        routeMarkersLayer.clearLayers();
+                    } else {
+                        routeMarkersLayer = L.layerGroup().addTo(map);
+                    }
+
+                    // 2. สร้าง Waypoints สำหรับวาดเส้นทาง (ต้องมีจุดเริ่มต้นด้วย)
+                    const waypointsForRouting = [L.latLng(origin.split(','))];
+                    result.orderedStudents.forEach(student => {
+                        const [lat, lng] = student.coords.split(',');
+                        waypointsForRouting.push(L.latLng(lat, lng));
+                    });
+
+                    // 3. วาดเส้นทางบนแผนที่
+                    routeControl = L.Routing.control({
+                        waypoints: waypointsForRouting,
+                        routeWhileDragging: false,
+                        show: false,
+                        addWaypoints: false,
+                        draggableWaypoints: false,
+                        lineOptions: {
+                            styles: [{ color: '#3498db', opacity: 0.8, weight: 6 }]
+                        },
+                        // ปิดการสร้าง marker อัตโนมัติของ routing-machine
+                        createMarker: function() { return null; } 
+                    }).addTo(map);
+
+                    // 4. สร้างและเพิ่มหมุดตัวเลขลงบนแผนที่
+                    result.orderedStudents.forEach((student, index) => {
+                        const [lat, lng] = student.coords.split(',');
+                        const numberIcon = L.divIcon({
+                            html: `<div class="route-marker-icon">${index + 1}</div>`,
+                            className: '', // ไม่ต้องใช้ className เพิ่มเติม
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 15]
+                        });
+                        
+                        L.marker([lat, lng], { icon: numberIcon })
+                            .bindPopup(`<b>ลำดับที่ ${index + 1}</b><br>${student.name}`)
+                            .addTo(routeMarkersLayer);
+                    });
+
+                    // 5. แสดงสรุปผลลัพธ์และลำดับการเดินทาง
+                    const detailsDiv = document.getElementById('route-details');
+                    let orderedListHtml = '<ol>';
+                    result.orderedStudents.forEach(student => {
+                        orderedListHtml += `<li>${student.name}</li>`;
+                    });
+                    orderedListHtml += '</ol>';
+
+                    detailsDiv.innerHTML = `<h4>ผลการคำนวณ</h4>
+                        <p><strong>ระยะทางรวม:</strong> ${result.totalDistanceKm} กม.</p>
+                        <p><strong>เวลาเดินทางโดยประมาณ:</strong> ${result.totalDurationText}</p>
+                        <h4>ลำดับการเดินทางแนะนำ:</h4>
+                        ${orderedListHtml}`;
+                })
+                .withFailureHandler(err => {
+                    hideLoading();
+                    alert("เกิดข้อผิดพลาดในการคำนวณเส้นทาง: " + err.message);
+                })
+                .calculateRoute(sessionToken, origin, studentData);
+        }
+
+        function planCustomRoute() {
+            const selectedStudents = Array.from(document.querySelectorAll('#student-checklist input:checked'))
+                .map(cb => {
+                    const student = allStudentsData.find(s => s.ID == cb.value);
+                    return {
+                        id: student.ID,
+                        name: `${student['คำนำหน้า'] || ''} ${student['ชื่อ-นามสกุล']}`,
+                        coords: `${cb.dataset.lat},${cb.dataset.lng}`
+                    };
+                });
+                
+            if (selectedStudents.length < 1) {
+                alert('กรุณาเลือกนักเรียนอย่างน้อย 1 คน');
+                return;
+            }
+            if (selectedStudents.length > 23) {
+                alert("เลือกนักเรียนได้ไม่เกิน 23 คนต่อครั้ง");
+                return;
+            }
+            
+            calculateAndDisplayRoute(selectedStudents, "คำนวณเส้นทางที่เลือก...");
+        }
+
+        function planSmartRoute() {
+            if (allStudentsData.length === 0) {
+                alert("ไม่มีข้อมูลนักเรียนสำหรับสร้างเส้นทาง");
+                return;
+            }
+            if (allStudentsData.length > 23) {
+                alert("ไม่สามารถสร้างเส้นทางอัตโนมัติได้ เนื่องจากมีนักเรียนเกิน 23 คน\nกรุณาใช้ฟังก์ชัน 'เลือกนักเรียนเพื่อวางแผนเส้นทาง' แทน");
+                return;
+            }
+
+            const studentDataForRoute = allStudentsData.map(s => {
+                 return {
+                    id: s.ID,
+                    name: `${s['คำนำหน้า'] || ''} ${s['ชื่อ-นามสกุล']}`,
+                    coords: `${s['Latitude (ที่ปักหมุด)'] || s['ค่าละติจูด (M)']},${s['Longitude (ที่ปักหมุด)'] || s['ค่าลองจิจูด (M)']}`
+                };
+            });
+            
+            calculateAndDisplayRoute(studentDataForRoute, "กำลังสร้างเส้นทางแนะนำ...");
+        }
+
+        function updateAddressInSheet(address) {
+            const fullname = "<?!= user.fullname ?>";
+            const numberMatch = fullname.match(/\d+/);
+            const sheetNumber = numberMatch ? numberMatch[0] : null;
+            if (!sheetNumber) { console.log("Admin user, skipping sheet address update."); return; }
+            const sheetName = `ข้อมูลนักเรียน1/${sheetNumber}`;
+            google.script.run
+                .withFailureHandler(err => console.error("Update address failed: " + err.message))
+                .setTeacherAddressToSheet(sessionToken, address, sheetName);
+        }
+
+        function useCurrentLocation() {
+            if (!navigator.geolocation) return alert("เบราว์เซอร์ของคุณไม่รองรับ Geolocation");
+            showLoading("กำลังค้นหาตำแหน่งของคุณ...");
+            navigator.geolocation.getCurrentPosition(position => {
+                hideLoading();
+                startPoint = { lat: position.coords.latitude, lng: position.coords.longitude };
+                const displayText = `ตำแหน่งปัจจุบัน (${startPoint.lat.toFixed(4)}, ${startPoint.lng.toFixed(4)})`;
+                document.getElementById('start-point-display').textContent = displayText;
+                alert("ตั้งค่าจุดเริ่มต้นเป็นตำแหน่งปัจจุบันแล้ว");
+                if (map) { map.remove(); map = null; }
+                initializeMap();
+                updateAddressInSheet(`${startPoint.lat}, ${startPoint.lng}`);
+                google.script.run.updateTeacherAddress(sessionToken, displayText);
+            }, () => {
+                hideLoading();
+                alert("ไม่สามารถเข้าถึงตำแหน่งของคุณได้");
+            });
+        }
+        
+        function setStartPointFromInput() {
+            const input = document.getElementById('startAddress').value.trim();
+            if(!input) return;
+            showLoading("กำลังค้นหาที่อยู่...");
+            google.script.run
+                .withSuccessHandler(result => {
+                    hideLoading();
+                    if (result) {
+                        startPoint = { lat: result.lat, lng: result.lng };
+                        document.getElementById('start-point-display').textContent = input;
+                        document.getElementById('startPointModal').style.display = 'none';
+                        if (map) { map.remove(); map = null; }
+                        initializeMap();
+                        updateAddressInSheet(input);
+                        google.script.run.updateTeacherAddress(sessionToken, input);
+                    } else {
+                        alert("ไม่พบที่อยู่ในระบบแผนที่");
+                    }
+                })
+                .withFailureHandler(err => {
+                    hideLoading();
+                    alert("เกิดข้อผิดพลาดในการค้นหาที่อยู่: " + err.message);
+                })
+                .geocodeAddress(input);
+        }
+
+        function populateAllStudents(students) {
+            const container = document.getElementById('allStudentsContainer');
+            if (!students || students.length === 0) { container.innerHTML = '<p>ไม่พบข้อมูล</p>'; return; }
+            container.innerHTML = createTableHtml(students);
+        }
+
+        function populateSubdistricts(subdistricts) {
+            const container = document.getElementById('subdistrictContainer');
+            container.innerHTML = '';
+            if (!subdistricts || Object.keys(subdistricts).length === 0) { container.innerHTML = '<p>ไม่พบข้อมูล</p>'; return; }
+            for (const name in subdistricts) {
+                const section = document.createElement('div');
+                section.innerHTML = `<h3>ตำบล: ${name} (${subdistricts[name].length} คน)</h3>`;
+                section.innerHTML += createTableHtml(subdistricts[name]);
+                container.appendChild(section);
+            }
+        }
+
+        function createTableHtml(students) {
+            let table = '<table><thead><tr><th>รูปโปรไฟล์</th><th>ชื่อ-สกุล (ห้อง)</th><th>ตำบล/แขวง</th><th>ระยะทาง(กม.)</th><th>สถานะ</th><th>ดำเนินการ</th></tr></thead><tbody>';
+            students.forEach(s => {
+                const profilePhotoUrl = s['URL รูปถ่ายนักเรียน'] || '';
+                const profilePhotoHtml = profilePhotoUrl ? `<img src="${profilePhotoUrl}" class="profile-photo">` : 'N/A';
+                let statusClass = s['สถานะการตรวจสอบ'] === 'ตรวจสอบแล้ว' ? 'status-verified' : 'status-pending';
+                table += `<tr>
+                    <td>${profilePhotoHtml}</td>
+                    <td>${s['คำนำหน้า'] || ''} ${s['ชื่อ-นามสกุล'] || 'N/A'} (${s.classroom.replace('ข้อมูลนักเรียน','') || 'N/A'})</td>
+                    <td>${s['ตำบล/แขวง'] || 'N/A'}</td>
+                    <td>${s['ระยะทาง(กม.)(คำนวณ)'] ? parseFloat(s['ระยะทาง(กม.)(คำนวณ)']).toFixed(2) : 'N/A'}</td>
+                    <td class="${statusClass}">${s['สถานะการตรวจสอบ'] || 'รอตรวจสอบ'}</td>
+                    <td class="action-buttons">
+                        <button class="btn-small btn-info" onclick='showDetails("${s.ID}")'>ดู</button>
+                        <button class="btn-small btn-success" onclick="updateStatus('${s.ID}', '${s.classroom}', 'ตรวจสอบแล้ว')">ยืนยัน</button>
+                        <button class="btn-small btn-warning" onclick="updateStatus('${s.ID}', '${s.classroom}', 'รอตรวจสอบ')">รอตรวจ</button>
+                        <button class="btn-small btn-danger" onclick="remove('${s.ID}', '${s.classroom}')">ลบ</button>
+                    </td>
+                </tr>`;
+            });
+            return table + '</tbody></table>';
+        }
+
+        function showDetails(studentId) {
+            const student = allStudentsData.find(s => s.ID === studentId);
+            if (!student) return alert("ไม่พบข้อมูลนักเรียน ID: " + studentId);
+
+            const body = document.getElementById('detailsModalBody');
+            
+            const housePhotoUrl = student['URL รูปถ่ายหน้าบ้าน'];
+            const housePhotoHtml = housePhotoUrl && !String(housePhotoUrl).startsWith('Error')
+                ? `<p><strong>รูปถ่ายหน้าบ้าน:</strong><br><a href="${housePhotoUrl}" target="_blank"><img src="${housePhotoUrl}" style="max-width: 100%; height: auto; border-radius: 8px; margin-top: 5px; border: 1px solid #ddd;"></a></p>`
+                : '<p><strong>รูปถ่ายหน้าบ้าน:</strong> <i>ไม่มีรูปภาพ</i></p>';
+
+            const profilePhotoUrl = student['URL รูปถ่ายนักเรียน'];
+            const profilePhotoHtml = profilePhotoUrl && !String(profilePhotoUrl).startsWith('Error')
+                ? `<p><img src="${profilePhotoUrl}" class="profile-photo" style="width:100px; height:100px;"></p><p><a href="${profilePhotoUrl}" target="_blank" class="btn-small btn-success">ดูรูปโปรไฟล์เต็ม</a></p>`
+                : '<p><strong>รูปโปรไฟล์:</strong> <i>ไม่มีรูปภาพ</i></p>';
+            
+            const lat = student['Latitude (ที่ปักหมุด)'] || student['ค่าละติจูด (M)'];
+            const lng = student['Longitude (ที่ปักหมุด)'] || student['ค่าลองจิจูด (M)'];
+            
+            const mapsLink = (lat && lng)
+                ? `<a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" class="btn-small btn-success">เปิดใน Google Maps</a>`
+                : '<i>ไม่มีข้อมูลพิกัด</i>';
+
+            body.innerHTML = `<h3>ข้อมูลนักเรียน</h3>
+                ${profilePhotoHtml}
+                <p><strong>ชื่อ-นามสกุล:</strong> ${student['คำนำหน้า'] || ''} ${student['ชื่อ-นามสกุล'] || 'N/A'}</p>
+                <p><strong>ห้องเรียน:</strong> ${student.classroom ? student.classroom.replace('ข้อมูลนักเรียน','') : 'N/A'} <strong>เลขที่:</strong> ${student['เลขที่'] || 'N/A'}</p>
+                <p><strong>รหัสประจำตัว:</strong> ${student['เลขประจำตัวนักเรียน'] || 'N/A'}</p>
+                <p><strong>เบอร์โทรศัพท์:</strong> ${student['เบอร์โทรศัพท์'] || 'N/A'}</p>
+                <hr>
+                <h3>ข้อมูลที่อยู่และการเดินทาง</h3>
+                <p><strong>ที่อยู่:</strong> ${student['ที่อยู่เต็ม(คำนวณ)'] || 'N/A'}</p>
+                <p><strong>จุดสังเกต:</strong> ${student['จุดสังเกตใกล้บ้าน'] || '-'}</p>
+                <p><strong>ระยะทาง (โดยประมาณ):</strong> ${student['ระยะทาง(กม.)(คำนวณ)'] ? parseFloat(student['ระยะทาง(กม.)(คำนวณ)']).toFixed(2) + ' กม.' : 'N/A'}</p>
+                <p><strong>พิกัด (Lat, Lng):</strong> ${lat || 'N/A'}, ${lng || 'N/A'}</p>
+                <p>${mapsLink}</p>
+                ${housePhotoHtml}
+                <hr>
+                <h3>ข้อมูลผู้ปกครอง</h3>
+                <p><strong>ชื่อผู้ปกครอง:</strong> ${student['คำนำหน้าผู้ปกครอง'] || ''} ${student['ชื่อ-สกุล ผู้ปกครอง'] || 'N/A'}</p>
+                <p><strong>ความเกี่ยวข้อง:</strong> ${student['ความเกี่ยวข้อง'] || 'N/A'}</p>
+                <p><strong>เบอร์โทรศัพท์:</strong> ${student['เบอร์โทรศัพท์ผู้ปกครอง'] || 'N/A'}</p>`;
+
+            document.getElementById('detailsModal').style.display = 'flex';
+        }
+
+        function updateStatus(studentId, classroom, newStatus) {
+            showLoading('กำลังอัปเดตสถานะ...');
+            google.script.run
+                .withSuccessHandler(response => { hideLoading(); loadDashboardData(); })
+                .withFailureHandler(err => { hideLoading(); alert('เกิดข้อผิดพลาด: ' + err.message); })
+                .verifyStudentData(sessionToken, studentId, newStatus, classroom);
+        }
+
+        function remove(studentId, classroom) {
+            if (confirm('คุณต้องการลบข้อมูลนักเรียนคนนี้ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
+                showLoading('กำลังลบข้อมูล...');
+                google.script.run
+                    .withSuccessHandler(response => { hideLoading(); loadDashboardData(); })
+                    .withFailureHandler(err => { hideLoading(); alert('เกิดข้อผิดพลาด: ' + err.message); })
+                    .deleteStudentRecord(sessionToken, studentId, classroom);
+            }
+        }
+    </script>
+</body>
+</html>
